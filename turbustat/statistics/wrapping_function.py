@@ -200,7 +200,7 @@ def stats_wrapper(dataset1, dataset2, fiducial_models=None,
         if any("SCF" in s for s in statistics):
             scf_distance = \
                 SCF_Distance(dataset1["cube"][0],
-                             dataset2["cube"][0]).distance_metric()
+                             dataset2["cube"][0], size=23).distance_metric()
             distances["SCF"] = scf_distance.distance
             if not multicore:
                 fiducial_models["SCF"] = scf_distance.scf1
@@ -401,7 +401,7 @@ def stats_wrapper(dataset1, dataset2, fiducial_models=None,
         if any("SCF" in s for s in statistics):
             scf_distance = \
                 SCF_Distance(dataset1["cube"][0],
-                             dataset2["cube"][0],
+                             dataset2["cube"][0], size=23,
                              fiducial_model=fiducial_models["SCF"]).distance_metric()
             distances["SCF"] = scf_distance.distance
 
