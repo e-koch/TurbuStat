@@ -135,8 +135,6 @@ class wt2D(object):
 
         self.Wf = self.Wf[:, :n0, :m0]
 
-        return self
-
     def astropy_cwt2d(self, dx=None, dy=None):
         '''
         Same as cwt2D except it uses astropy.convolve_fft's ability
@@ -173,8 +171,6 @@ class wt2D(object):
                                             fftn=fftn, ifftn=ifftn)
 
         self.Wf = self.Wf[:, :n0, :m0]
-
-        return self
 
     def icwt2d(self, da=0.25):
         '''
