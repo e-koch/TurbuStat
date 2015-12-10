@@ -206,7 +206,7 @@ class wt2D(object):
             self.iWf[i, :, :] = ifftn(W_ft * psi_ft_bar, s=(L, K)) *\
                 da / an ** 2.
 
-        self.iWf /= self.iWf[:, :l0, :k0].real / self.wavelet.cpsi
+        self.iWf /= self.wavelet.cpsi
 
         return self
 
