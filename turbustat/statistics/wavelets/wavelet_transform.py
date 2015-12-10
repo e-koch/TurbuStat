@@ -207,8 +207,7 @@ class wt2D(object):
                 da / an ** 2.
 
         self.iWf /= self.wavelet.cpsi
-
-        return self
+        self.iWf = self.iWf.real
 
     def make_1D_transform(self):
         self.curve = transform((self.Wf, self.scales), self.imgscale)
