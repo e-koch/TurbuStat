@@ -109,10 +109,8 @@ class wt2D(object):
             Spacing in the y-direction.
         '''
         if dx is not None:
-            assert isinstance(dx, list)
             self.dx = dx
         if dy is not None:
-            assert isinstance(dy, list)
             self.dx = dy
 
         # Determines the shape of the arrays and the discrete scales.
@@ -149,10 +147,8 @@ class wt2D(object):
         '''
 
         if dx is not None:
-            assert isinstance(dx, list)
             self.dx = dx
         if dy is not None:
-            assert isinstance(dy, list)
             self.dx = dy
 
         n0, m0 = self.array.shape
