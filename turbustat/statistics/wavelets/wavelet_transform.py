@@ -69,7 +69,7 @@ class wt2D(object):
             self.scales = np.logspace(
                 np.log10(a_min), np.log10(min(self.array.shape)), num)
         else:
-            self.scales = scales
+            self.scales = np.asarray(scales)
 
         ### NOTE: can't use nan_interpolating from astropy
         ### until the normalization for sum to zeros kernels is fixed!!!
