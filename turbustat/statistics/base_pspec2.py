@@ -8,7 +8,8 @@ import astropy.units as u
 from numpy.fft import fftshift
 
 from .lm_seg import Lm_Seg
-from .psds import pspec, make_radial_freq_arrays
+from .psds import (pspec, make_radial_freq_arrays,
+                   pspec_photutils, pspec_interp)
 from .fitting_utils import clip_func, residual_bootstrap
 from .elliptical_powerlaw import (fit_elliptical_powerlaw,
                                   inverse_interval_transform,
@@ -74,12 +75,15 @@ class StatisticBase_PSpec2D(object):
         # Avoid infs when dividing out by the beam power spectrum
         self._beam_pow[self._beam_pow == 0.0] = np.NaN
 
-    def compute_radial_pspec(self, logspacing=False, max_bin=None, **kwargs):
+    def compute_radial_pspec(self, method='interpolate',
+                             logspacing=False, max_bin=None, **kwargs):
         '''
         Computes the radially averaged power spectrum.
 
         Parameters
         ----------
+        method : {'interpolate', 'binned_statistic', 'photutils'}, optional
+            Method to use to compute the radial power spectrum.
         logspacing : bool, optional
             Return logarithmically spaced bins for the lags.
         max_bin : float, optional
@@ -93,8 +97,17 @@ class StatisticBase_PSpec2D(object):
         else:
             azim_constraint_flag = False
 
-        out = pspec(self.ps2D, return_stddev=True,
-                    logspacing=logspacing, max_bin=max_bin, **kwargs)
+        if method == 'photutils':
+            out = pspec_photutils(self.ps2D, return_stddev=True,
+                                  max_bin=max_bin, **kwargs)
+        elif method == 'binned_statistic':
+            out = pspec(self.ps2D, return_stddev=True,
+                        logspacing=logspacing, max_bin=max_bin, **kwargs)
+        elif method == 'interpolate':
+            out = pspec_interp(self.ps2D, return_stddev=True,
+                        logspacing=logspacing, max_bin=max_bin, **kwargs)
+        else:
+            raise NotImplementedError("")
 
         self._azim_constraint_flag = azim_constraint_flag
 
@@ -182,6 +195,8 @@ class StatisticBase_PSpec2D(object):
 
             x = np.log10(freqs_2d.value[clip_mask])
             y = np.log10(self.ps2D[clip_mask])
+
+            self._temp_xy = [x, y]
 
         else:
             # Make the data to fit to
