@@ -11,7 +11,7 @@ from scipy.stats import t as t_dist
 def pspec(psd2, nbins=None, return_stddev=False, binsize=1.0,
           logspacing=True, max_bin=None, min_bin=None, return_freqs=True,
           theta_0=None, delta_theta=None, boot_iter=None,
-          mean_func=np.nanmean):
+          mean_func=np.nanmedian):
     '''
     Calculate the radial profile using scipy.stats.binned_statistic.
 
@@ -221,3 +221,258 @@ def make_radial_freq_arrays(shape):
     yy_freq, xx_freq = np.meshgrid(yfreqs, xfreqs, indexing='ij')
 
     return yy_freq[::-1], xx_freq[::-1]
+
+
+def pspec_photutils(psd2, nbins=None, return_stddev=False, binsize=1.0,
+          logspacing=True, max_bin=None, min_bin=None, return_freqs=True,
+          theta_0=None, delta_theta=None,):
+    '''
+    Calculate the radial profile using radial profile tools from
+    `photutils <https://photutils.readthedocs.io/en/stable/profiles.html>`_.
+
+
+    Parameters
+    ----------
+    psd2 : np.ndarray
+        2D Spectral power density.
+    nbins : int, optional
+        Number of bins to use. If None, it is calculated based on the size
+        of the given arrays.
+    return_stddev : bool, optional
+        Return the standard deviations in each bin.
+    binsize : float, optional
+        Size of bins to be used. If logspacing is enabled, this will increase
+        the number of bins used by the inverse of the given binsize.
+    logspacing : bool, optional
+        Use logarithmically spaces bins.
+    max_bin : float, optional
+        Give the maximum value to bin to.
+    min_bin : float, optional
+        Give the minimum value to bin to.
+    return_freqs : bool, optional
+        Return spatial frequencies.
+    theta_0 : `~astropy.units.Quantity`, optional
+        The center angle of the azimuthal mask. Must have angular units.
+    delta_theta : `~astropy.units.Quantity`, optional
+        The width of the azimuthal mask. This must be given when
+        a `theta_0` is given. Must have angular units.
+
+    Returns
+    -------
+    bins_cents : np.ndarray
+        Centre of the bins.
+    ps1D : np.ndarray
+        1D binned power spectrum.
+    ps1D_stddev : np.ndarray
+        Returned when return_stddev is enabled. Standard deviations
+        within each of the bins.
+    '''
+
+    try:
+        from photutils.profiles import RadialProfile
+    except ImportError:
+        raise ImportError("pspec_photutils requires photutils be installed.")
+
+    # Define  bins
+    yy, xx = make_radial_arrays(psd2.shape)
+
+    dists = np.sqrt(yy**2 + xx**2)
+
+    if max_bin is None:
+        max_bin = dists.max()
+
+    if min_bin is None:
+        min_bin = dists.min()
+
+    # if logspacing:
+    #     bins = np.logspace(np.log10(min_bin), np.log10(max_bin),
+    #                        nbins + 1,
+    #                        endpoint=True)
+    # else:
+    #     bins = np.linspace(min_bin, max_bin,
+    #                        nbins + 1, endpoint=True)
+
+    dist_edges = np.arange(min_bin, max_bin,
+                           binsize)
+
+
+    # Optional define azimuthal mask:
+    if theta_0 is not None:
+
+        if delta_theta is None:
+            raise ValueError("Must give delta_theta.")
+
+        theta_0 = theta_0.to(u.rad)
+        delta_theta = delta_theta.to(u.rad)
+
+        theta_limits = Angle([theta_0 - 0.5 * delta_theta,
+                              theta_0 + 0.5 * delta_theta])
+
+        # Define theta array
+        thetas = Angle(np.arctan2(yy, xx) * u.rad)
+
+        # Wrap around pi
+        theta_limits = theta_limits.wrap_at(np.pi * u.rad)
+
+        if theta_limits[0] < theta_limits[1]:
+            azim_mask = np.logical_and(thetas >= theta_limits[0],
+                                       thetas <= theta_limits[1])
+        else:
+            azim_mask = np.logical_or(thetas >= theta_limits[0],
+                                      thetas <= theta_limits[1])
+
+        azim_mask = np.logical_or(azim_mask, azim_mask[::-1, ::-1])
+
+        # Fill in the middle angles
+        ny = np.floor(psd2.shape[0] / 2.).astype(int)
+        nx = np.floor(psd2.shape[1] / 2.).astype(int)
+
+        azim_mask[ny - 1:ny + 1, nx - 1:nx + 1] = True
+    else:
+        azim_mask = None
+
+    finite_mask = np.isfinite(psd2)
+    if azim_mask is not None:
+        finite_mask = np.logical_and(finite_mask, azim_mask)
+
+    # Centroid to define the center:
+    from photutils.centroids import centroid_quadratic
+    xycen = centroid_quadratic(psd2,
+                               xpeak=psd2.shape[1] / 2.,
+                               ypeak=psd2.shape[0] / 2.)
+
+    # Create radial profile here
+    # Uses the opposite masking convention, hence the ~.
+    rp_ps1d = RadialProfile(psd2, xycen, dist_edges,
+                            mask=~finite_mask)
+
+    rp_ps1d_cts = RadialProfile(np.ones_like(psd2), xycen, dist_edges,
+                                mask=~finite_mask)
+
+    ps1D = rp_ps1d.profile / rp_ps1d_cts.profile
+    bin_cents = rp_ps1d.radius
+    ps1D_stddev = rp_ps1d.profile_error
+
+    if ps1D_stddev.size == 0:
+        ps1D_stddev = np.zeros_like(ps1D)
+
+    if return_freqs:
+        bin_cents = np.fft.rfftfreq(rp_ps1d.radius.size * 2 - 1)
+
+    if not return_stddev:
+        if theta_0 is not None:
+            return bin_cents, ps1D, azim_mask
+        else:
+            return bin_cents, ps1D
+    else:
+        if theta_0 is not None:
+            return bin_cents, ps1D, ps1D_stddev, azim_mask
+        else:
+            return bin_cents, ps1D, ps1D_stddev
+
+
+
+def pspec_interp(psd2, nbins=None, return_stddev=False, binsize=1.0,
+                 logspacing=True, max_bin=None, min_bin=None, return_freqs=True,
+                 theta_0=None, delta_theta=None, boot_iter=None,
+                 mean_func=np.nanmedian,
+                 std_func=np.nanstd):
+    '''
+    Calculate the radial profile using scipy.stats.binned_statistic.
+    Adapted from: https://dsp.stackexchange.com/questions/36902/calculate-1d-power-spectrum-from-2d-images
+
+    Parameters
+    ----------
+    psd2 : np.ndarray
+        2D Spectral power density.
+    nbins : int, optional
+        Number of bins to use. If None, it is calculated based on the size
+        of the given arrays.
+    return_stddev : bool, optional
+        Return the standard deviations in each bin.
+    binsize : float, optional
+        Size of bins to be used. If logspacing is enabled, this will increase
+        the number of bins used by the inverse of the given binsize.
+    logspacing : bool, optional
+        Use logarithmically spaces bins.
+    max_bin : float, optional
+        Give the maximum value to bin to.
+    min_bin : float, optional
+        Give the minimum value to bin to.
+    return_freqs : bool, optional
+        Return spatial frequencies.
+    theta_0 : `~astropy.units.Quantity`, optional
+        The center angle of the azimuthal mask. Must have angular units.
+    delta_theta : `~astropy.units.Quantity`, optional
+        The width of the azimuthal mask. This must be given when
+        a `theta_0` is given. Must have angular units.
+    boot_iter : int, optional
+        Number of bootstrap iterations for estimating the standard deviation
+        in each bin. Require `return_stddev=True`.
+    mean_func : function, optional
+        Define the function used to create the 1D power spectrum. The default
+        is `np.nanmean`.
+
+    Returns
+    -------
+    bins_cents : np.ndarray
+        Centre of the bins.
+    ps1D : np.ndarray
+        1D binned power spectrum.
+    ps1D_stddev : np.ndarray
+        Returned when return_stddev is enabled. Standard deviations
+        within each of the bins.
+    '''
+
+    n2, n1 = psd2.shape
+
+    k1 = np.fft.fftshift(np.fft.fftfreq(n1, 1.))
+    k2 = np.fft.fftshift(np.fft.fftfreq(n2, 1.))
+
+    # k = k1 if k1.size < k2.size else k2
+    # k = k[k > 0]
+    k_rad = np.sqrt(k1[:, np.newaxis]**2 + k2[np.newaxis, :]**2)
+
+    from scipy.interpolate import RectBivariateSpline
+    power_interp = RectBivariateSpline(k1, k2, psd2)
+
+    N = 256
+    theta = np.linspace(-np.pi, np.pi, N, False)
+
+    k = np.linspace(max(k1[k1 > 0.].min(), k2[k2 > 0.].min()),
+                    max(k1.max(), k2.max()),
+                    min(psd2.shape))
+
+    power = np.empty_like(k)
+    # TODO: scatter estimate not completed.
+    power_stddev = np.zeros_like(k)
+    for i in range(k.size):
+        kE = np.sin(theta) * k[i]
+        kN = np.cos(theta) * k[i]
+        power[i] = mean_func(power_interp.ev(kE, kN))# * 4 * np.pi)
+
+        # power_stddev[i] = std_func(power_interp.ev(kE, kN)) * 4 * np.pi
+
+        # Median is more stable than the mean here
+
+    # TODO: Is this needed??
+    # ps1D = power / psd2.size
+    # ps1D_stddev = power_stddev / psd2.size
+
+    ps1D = power
+    ps1D_stddev = power_stddev
+
+    bin_cents = k
+
+    azim_mask = np.ones(psd2.shape, dtype=bool)
+
+    if not return_stddev:
+        if theta_0 is not None:
+            return bin_cents, ps1D, azim_mask
+        else:
+            return bin_cents, ps1D
+    else:
+        if theta_0 is not None:
+            return bin_cents, ps1D, ps1D_stddev, azim_mask
+        else:
+            return bin_cents, ps1D, ps1D_stddev
