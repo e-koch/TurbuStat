@@ -1,8 +1,17 @@
 [build-system]
 requires = ["setuptools",
             "setuptools_scm",
-            "wheel",
-            "extension-helpers",
-            "oldest-supported-numpy",
+            "oldest-supported-numpy;python_version<'3.9'",
+            "numpy>=2.0.0rc1;python_version>='3.9'",
             "cython"]
 build-backend = 'setuptools.build_meta'
+
+[tool.cibuildwheel]
+skip = "cp36-* cp37-* *-musllinux*"
+test-skip = "*-macosx_arm64 *-manylinux_aarch64"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+
+[tool.cibuildwheel.linux]
+archs = ["auto", "aarch64"]
